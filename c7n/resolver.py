@@ -11,20 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
 
 import csv
 import io
-import jmespath
 import json
-import os.path
 import logging
+import os.path
 import zlib
-from six import text_type
-from six.moves.urllib.request import Request, urlopen
-from six.moves.urllib.parse import parse_qsl, urlparse
 from contextlib import closing
 
+from six import text_type
+from six.moves.urllib.parse import parse_qsl, urlparse
+from six.moves.urllib.request import Request, urlopen
+
+import jmespath
 from c7n.utils import format_string_values
 
 log = logging.getLogger('custodian.resolver')
@@ -124,13 +126,14 @@ class ValuesFrom(object):
         }
     }
 
-    def __init__(self, data, manager):
+    def __init__(self, data, manager, event=None):
         config_args = {
             'account_id': manager.config.account_id,
             'region': manager.config.region
         }
         self.data = format_string_values(data, **config_args)
         self.manager = manager
+        self.event = event
         self.resolver = URIResolver(manager.session_factory, manager._cache)
 
     def get_contents(self):
@@ -154,9 +157,15 @@ class ValuesFrom(object):
         if format == 'json':
             data = json.loads(contents)
             if 'expr' in self.data:
-                res = jmespath.search(self.data['expr'], data)
+                # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
+                if self.event:
+                    expr = self.data['expr'].format(**self.event)
+                    log.debug('Expression after substitution:  %s' % expr)
+                else:
+                    expr = self.data['expr']
+                res = jmespath.search(expr, data)
                 if res is None:
-                    log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
+                    log.warning('ValueFrom filter: %s key returned None' % expr)
                 return res
         elif format == 'csv' or format == 'csv2dict':
             data = csv.reader(io.StringIO(contents))
@@ -167,7 +176,11 @@ class ValuesFrom(object):
                     return [d[self.data['expr']] for d in data]
                 data = list(data)
             if 'expr' in self.data:
-                res = jmespath.search(self.data['expr'], data)
+                if self.event:
+                    expr = self.data['expr'].format(**self.event)
+                else:
+                    expr = self.data['expr']
+                res = jmespath.search(expr, data)
                 if res is None:
                     log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
                 return res

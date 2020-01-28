@@ -14,29 +14,30 @@
 """
 Resource Filtering Logic
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
 
 import copy
 import datetime
-from datetime import timedelta
 import fnmatch
 import logging
 import operator
 import re
 import sys
-
-from dateutil.tz import tzutc
-from dateutil.parser import parse
+from datetime import timedelta
 from distutils import version
-import jmespath
+
 import six
 
+import jmespath
 from c7n import ipaddress
 from c7n.exceptions import PolicyValidationError
 from c7n.executor import ThreadPoolExecutor
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
-from c7n.utils import set_annotation, type_schema, parse_cidr
+from c7n.utils import parse_cidr, set_annotation, type_schema
+from dateutil.parser import parse
+from dateutil.tz import tzutc
 
 
 class FilterValidationError(Exception):
@@ -185,6 +186,7 @@ class Filter(object):
     def __init__(self, data, manager=None):
         self.data = data
         self.manager = manager
+        self.event = {}
 
     def get_permissions(self):
         return self.permissions
@@ -195,6 +197,7 @@ class Filter(object):
 
     def process(self, resources, event=None):
         """ Bulk process resources and return filtered set."""
+        self.event = event
         return list(filter(self, resources))
 
     def get_block_operator(self):
@@ -482,6 +485,7 @@ class ValueFilter(Filter):
         return self
 
     def __call__(self, i):
+        # i is the aws describe call results
         if self.data.get('value_type') == 'resource_count':
             return self.process(i)
 
@@ -531,13 +535,14 @@ class ValueFilter(Filter):
         return r
 
     def match(self, i):
+        # i is the describe resource response. ie. aws ec2 describe-instance --instance-id=<instance_id>
         if self.v is None and len(self.data) == 1:
             [(self.k, self.v)] = self.data.items()
         elif self.v is None and not hasattr(self, 'content_initialized'):
             self.k = self.data.get('key')
             self.op = self.data.get('op')
             if 'value_from' in self.data:
-                values = ValuesFrom(self.data['value_from'], self.manager)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')
