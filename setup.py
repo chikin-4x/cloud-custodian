@@ -1,6 +1,7 @@
 import os
 from io import open
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 
 def read(fname):
@@ -17,7 +18,7 @@ setup(
         "Topic :: System :: Systems Administration",
         "Topic :: System :: Distributed Computing"
     ],
-    url="https://github.com/cloud-custodian/cloud-custodian",
+    url="https://github.com/chikin-4x/cloud-custodian",
     license="Apache-2.0",
     packages=find_packages(),
     entry_points={
