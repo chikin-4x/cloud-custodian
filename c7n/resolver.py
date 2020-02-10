@@ -159,8 +159,11 @@ class ValuesFrom(object):
             if 'expr' in self.data:
                 # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
                 if self.event:
-                    expr = self.data['expr'].format(**self.event)
-                    log.debug('Expression after substitution:  %s' % expr)
+                    try:
+                        expr = self.data['expr'].format(**self.event)
+                        log.debug('Expression after substitution:  %s' % expr)
+                    except KeyError as e:
+                        log.error('Failed substituting into expression: %s' % str(e))
                 else:
                     expr = self.data['expr']
                 res = jmespath.search(expr, data)
