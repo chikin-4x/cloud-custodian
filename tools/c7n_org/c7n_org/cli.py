@@ -1,25 +1,15 @@
 # Copyright 2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 """Run a custodian policy across an organization's accounts
 """
 
+import csv
 from collections import Counter
 import logging
 import os
 import time
 import subprocess
-import six
 import sys
 
 import multiprocessing
@@ -40,11 +30,10 @@ from c7n.config import Config
 from c7n.policy import PolicyCollection
 from c7n.provider import get_resource_class
 from c7n.reports.csvout import Formatter, fs_record_set
-from c7n.resources import load_resources
+from c7n.resources import load_available
 from c7n.utils import CONN_CACHE, dumps
 
 from c7n_org.utils import environ, account_tags
-from c7n.utils import UnicodeWriter
 
 log = logging.getLogger('c7n_org')
 
@@ -141,7 +130,7 @@ def cli():
     """custodian organization multi-account runner."""
 
 
-class LogFilter(object):
+class LogFilter:
     """We want to keep the main c7n-org cli output to be readable.
 
     We previously did so via squelching custodian's log output via
@@ -194,7 +183,7 @@ def init(config, use, debug, verbose, accounts, tags, policies, resource=None, p
     filter_policies(custodian_config, policy_tags, policies, resource)
     filter_accounts(accounts_config, tags, accounts)
 
-    load_resources()
+    load_available()
     MainThreadExecutor.c7n_async = False
     executor = debug and MainThreadExecutor or ProcessPoolExecutor
     return accounts_config, custodian_config, executor
@@ -212,7 +201,7 @@ def resolve_regions(regions):
 def get_session(account, session_name, region):
     if account.get('role'):
         roles = account['role']
-        if isinstance(roles, six.string_types):
+        if isinstance(roles, str):
             roles = [roles]
         s = None
         for r in roles:
@@ -239,7 +228,8 @@ def filter_accounts(accounts_config, tags, accounts, not_accounts=None):
     for a in accounts_config.get('accounts', ()):
         if not_accounts and a['name'] in not_accounts:
             continue
-        if accounts and a['name'] not in accounts:
+        account_id = a.get('account_id') or a.get('project_id') or a.get('subscription_id') or ''
+        if accounts and a['name'] not in accounts and account_id not in accounts:
             continue
         if tags:
             found = set()
@@ -276,6 +266,7 @@ def report_account(account, region, policies_config, output_path, cache_path, de
     output_path = os.path.join(output_path, account['name'], region)
     cache_path = os.path.join(cache_path, "%s-%s.cache" % (account['name'], region))
 
+    load_available()
     config = Config.empty(
         region=region,
         output_dir=output_path,
@@ -389,7 +380,7 @@ def report(config, output, use, output_dir, accounts,
         fields=prefix_fields)
 
     rows = formatter.to_csv(records, unique=False)
-    writer = UnicodeWriter(output, formatter.headers())
+    writer = csv.writer(output, formatter.headers())
     writer.writerow(formatter.headers())
     writer.writerows(rows)
 
@@ -513,6 +504,7 @@ def run_account(account, region, policies_config, output_path,
     logging.getLogger('custodian.output').setLevel(logging.ERROR + 1)
     CONN_CACHE.session = None
     CONN_CACHE.time = None
+    load_available()
 
     # allow users to specify interpolated output paths
     if '{' not in output_path:
@@ -529,7 +521,7 @@ def run_account(account, region, policies_config, output_path,
     env_vars = account_tags(account)
 
     if account.get('role'):
-        if isinstance(account['role'], six.string_types):
+        if isinstance(account['role'], str):
             config['assume_role'] = account['role']
             config['external_id'] = account.get('external_id')
         else:
@@ -546,13 +538,11 @@ def run_account(account, region, policies_config, output_path,
 
     with environ(**env_vars):
         for p in policies:
+            # Extend policy execution conditions with account information
+            p.conditions.env_vars['account'] = account
             # Variable expansion and non schema validation (not optional)
             p.expand_variables(p.get_variables(account.get('vars', {})))
             p.validate()
-
-            if p.region and p.region != region:
-                continue
-
             log.debug(
                 "Running policy:%s account:%s region:%s",
                 p.name, account['name'], region)

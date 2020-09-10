@@ -1,18 +1,6 @@
-# Copyright 2015-2018 Capital One Services, LLC
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 # PYTHON_ARGCOMPLETE_OK  (Must be in first 1024 bytes, so if tab completion
 # is failing, move this above the license)
 
@@ -33,7 +21,6 @@ except ImportError:
     def setproctitle(t):
         return None
 
-from c7n.commands import schema_completer
 from c7n.config import Config
 
 DEFAULT_REGION = 'us-east-1'
@@ -119,7 +106,7 @@ def _report_options(p):
         '--days', type=float, default=1,
         help="Number of days of history to consider")
     p.add_argument(
-        '--raw', type=argparse.FileType('wb'),
+        '--raw', type=argparse.FileType('w'),
         help="Store raw json of collected records to given file path")
     p.add_argument(
         '--field', action='append', default=[], type=_key_val_pair,
@@ -168,24 +155,18 @@ def _logs_options(p):
     )
 
 
-def _schema_tab_completer(prefix, parsed_args, **kwargs):
-    # If we are printing the summary we discard the resource
-    if parsed_args.summary:
-        return []
-
-    return schema_completer(prefix)
-
-
 def _schema_options(p):
     """ Add options specific to schema subcommand. """
 
     p.add_argument(
-        'resource', metavar='selector', nargs='?',
-        default=None).completer = _schema_tab_completer
+        'resource', metavar='selector', nargs='?', default=None)
     p.add_argument(
         '--summary', action="store_true",
         help="Summarize counts of available resources, actions and filters")
-    p.add_argument('--json', action="store_true", help=argparse.SUPPRESS)
+    p.add_argument('--json', action="store_true",
+        help="Export custodian's jsonschema")
+    p.add_argument('--outline', action="store_true",
+        help="Print outline of all resources and their actions and filters")
     p.add_argument("-v", "--verbose", action="count", help="Verbose logging")
     p.add_argument("-q", "--quiet", action="count", help=argparse.SUPPRESS)
     p.add_argument("--debug", default=False, help=argparse.SUPPRESS)
@@ -193,7 +174,7 @@ def _schema_options(p):
 
 def _dryrun_option(p):
     p.add_argument(
-        "-d", "--dryrun", action="store_true",
+        "-d", "--dryrun", "--dry-run", action="store_true",
         help="Don't execute actions but filter resources")
 
 
@@ -247,13 +228,13 @@ def setup_parser():
             "https://cloudcustodian.io/docs/aws/usage.html#metrics")
 
     run.add_argument(
-        "-m", "--metrics-enabled",
+        "-m", "--metrics-enabled", metavar="PROVIDER",
         default=None, nargs="?", const="aws",
         help=metrics_help)
     run.add_argument(
         "--trace",
         dest="tracer",
-        help=argparse.SUPPRESS,
+        help="Tracing integration",
         default=None, nargs="?", const="default")
 
     schema_desc = ("Browse the available vocabularies (resources, filters, modes, and "
@@ -275,15 +256,12 @@ def setup_parser():
     report.set_defaults(command="c7n.commands.report")
     _report_options(report)
 
-    logs_desc = "Get policy execution logs"
     logs = subs.add_parser(
-        'logs', help=logs_desc, description=logs_desc)
+        'logs')
     logs.set_defaults(command="c7n.commands.logs")
     _logs_options(logs)
 
-    metrics_desc = "Retrieve policy execution metrics."
-    metrics = subs.add_parser(
-        'metrics', description=metrics_desc, help=metrics_desc)
+    metrics = subs.add_parser('metrics')
     metrics.set_defaults(command="c7n.commands.metrics_cmd")
     _metrics_options(metrics)
 

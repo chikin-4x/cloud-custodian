@@ -1,23 +1,12 @@
 # Copyright 2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
 import boto3
 import copy
 import os
 import unittest
 
-import six
 from c7n_mailer.email_delivery import EmailDelivery
 from common import logger, get_ldap_lookup
 from common import MAILER_CONFIG, RESOURCE_1, SQS_MESSAGE_1, SQS_MESSAGE_4
@@ -148,7 +137,7 @@ class EmailTest(unittest.TestCase):
             SQS_MESSAGE
         )
         with patch("smtplib.SMTP") as mock_smtp:
-            for email_addrs, mimetext_msg in six.iteritems(to_addrs_to_email_messages_map):
+            for email_addrs, mimetext_msg in to_addrs_to_email_messages_map.items():
                 self.email_delivery.send_c7n_email(SQS_MESSAGE, list(email_addrs), mimetext_msg)
 
                 self.assertEqual(mimetext_msg['X-Priority'], '1 (Highest)')
@@ -185,7 +174,7 @@ class EmailTest(unittest.TestCase):
             SQS_MESSAGE
         )
         with patch("smtplib.SMTP") as mock_smtp:
-            for email_addrs, mimetext_msg in six.iteritems(to_addrs_to_email_messages_map):
+            for email_addrs, mimetext_msg in to_addrs_to_email_messages_map.items():
                 self.email_delivery.send_c7n_email(SQS_MESSAGE, list(email_addrs), mimetext_msg)
                 self.assertEqual(mimetext_msg.get('X-Priority'), None)
                 # self.assertEqual(mimetext_msg.get('X-Priority'), None)
@@ -341,3 +330,19 @@ class EmailTest(unittest.TestCase):
             self.email_delivery.config, self.email_delivery.logger,
             SQS_MESSAGE_4, SQS_MESSAGE_4['resources'], ['hello@example.com'])
         self.assertEqual(email['Cc'], 'hello@example.com, cc@example.com')
+
+    def test_sendgrid(self):
+        config = copy.deepcopy(MAILER_CONFIG)
+        logger_mock = MagicMock()
+
+        config['sendgrid_api_key'] = 'SENDGRID_API_KEY'
+        del config['smtp_server']
+
+        delivery = MockEmailDelivery(config, self.aws_session, logger_mock)
+
+        with patch("sendgrid.SendGridAPIClient.send") as mock_send:
+            with patch('c7n_mailer.utils.kms_decrypt') as mock_decrypt:
+                mock_decrypt.return_value = 'xyz'
+                delivery.send_c7n_email(SQS_MESSAGE_1, None, None)
+                mock_decrypt.assert_called_once()
+            mock_send.assert_called()

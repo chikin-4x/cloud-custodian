@@ -1,30 +1,17 @@
 # Copyright 2015-2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 import json
+import ipaddress
 import os
-import sys
 import tempfile
 import time
 
-import six
 from botocore.exceptions import ClientError
 from dateutil.parser import parse as parse_date
 import mock
 
-from c7n import ipaddress, utils
+from c7n import utils
 from c7n.config import Config
 from .common import BaseTest
 
@@ -132,6 +119,28 @@ class ProxyUrlTest(BaseTest):
 
 class UtilTest(BaseTest):
 
+    def test_merge_dict_list(self):
+
+        assert utils.merge_dict_list([
+            {'a': 1, 'x': 0}, {'b': 2, 'x': 0}, {'c': 3, 'x': 1}]) == {
+                'a': 1, 'b': 2, 'c': 3, 'x': 1}
+
+    def test_merge_dict(self):
+        a = {'detail': {'eventName': ['CreateSubnet'],
+                    'eventSource': ['ec2.amazonaws.com']},
+             'detail-type': ['AWS API Call via CloudTrail']}
+        b = {'detail': {'userIdentity': {
+            'userName': [{'anything-but': 'deputy'}]}}}
+        self.assertEqual(
+            utils.merge_dict(a, b),
+            {'detail-type': ['AWS API Call via CloudTrail'],
+             'detail': {
+                 'eventName': ['CreateSubnet'],
+                 'eventSource': ['ec2.amazonaws.com'],
+                 'userIdentity': {
+                     'userName': [
+                         {'anything-but': 'deputy'}]}}})
+
     def test_local_session_region(self):
         policies = [
             self.load_policy(
@@ -165,21 +174,15 @@ class UtilTest(BaseTest):
         self.assertEqual("{:+5M%M}".format(utils.FormatDate(d)), "05")
 
     def test_group_by(self):
-        sorter = lambda x: x  # NOQA E731
-        sorter = sys.version_info.major == 2 and sorted or sorter
         items = [{}, {"Type": "a"}, {"Type": "a"}, {"Type": "b"}]
-        self.assertEqual(
-            sorter(list(utils.group_by(items, "Type").keys())), [None, "a", "b"]
-        )
+        self.assertEqual(list(utils.group_by(items, "Type").keys()), [None, "a", "b"])
         items = [
             {},
             {"Type": {"Part": "a"}},
             {"Type": {"Part": "a"}},
             {"Type": {"Part": "b"}},
         ]
-        self.assertEqual(
-            sorter(list(utils.group_by(items, "Type.Part").keys())), [None, "a", "b"]
-        )
+        self.assertEqual(list(utils.group_by(items, "Type.Part").keys()), [None, "a", "b"])
 
     def write_temp_file(self, contents, suffix=".tmp"):
         """ Write a temporary file and return the filename.
@@ -365,7 +368,7 @@ class UtilTest(BaseTest):
         # Not a real schema, just doing a smoke test of the function
         # properties = 'target'
 
-        class FakeResource(object):
+        class FakeResource:
             schema = {
                 "additionalProperties": False,
                 "properties": {
@@ -393,11 +396,11 @@ class UtilTest(BaseTest):
         # are returned instead of a dictionary.
         FakeResource.schema = {}
         ret = utils.reformat_schema(FakeResource)
-        self.assertIsInstance(ret, six.text_type)
+        self.assertIsInstance(ret, str)
 
         delattr(FakeResource, "schema")
         ret = utils.reformat_schema(FakeResource)
-        self.assertIsInstance(ret, six.text_type)
+        self.assertIsInstance(ret, str)
 
     def test_load_file(self):
         # Basic load

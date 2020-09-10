@@ -1,18 +1,7 @@
 # Copyright 2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
-import six
 from c7n_azure.actions.delete import DeleteAction
 from c7n_azure.actions.lock import LockAction
 from c7n_azure.actions.tagging import (AutoTagDate)
@@ -28,8 +17,7 @@ from c7n_azure.utils import ResourceIdParser
 arm_resource_types = {}
 
 
-@six.add_metaclass(TypeMeta)
-class ArmTypeInfo(TypeInfo):
+class ArmTypeInfo(TypeInfo, metaclass=TypeMeta):
     # api client construction information for ARM resources
     id = 'id'
     name = 'name'
@@ -43,8 +31,7 @@ class ArmTypeInfo(TypeInfo):
     enable_tag_operations = True
 
 
-@six.add_metaclass(QueryMeta)
-class ArmResourceManager(QueryResourceManager):
+class ArmResourceManager(QueryResourceManager, metaclass=QueryMeta):
     class resource_type(ArmTypeInfo):
         service = 'azure.mgmt.resource'
         client = 'ResourceManagementClient'
@@ -68,42 +55,43 @@ class ArmResourceManager(QueryResourceManager):
         return self.resource_type.enable_tag_operations
 
     @staticmethod
-    def register_arm_specific(registry, _):
-        for resource in registry.keys():
-            klass = registry.get(resource)
-            if issubclass(klass, ArmResourceManager):
-                arm_resource_types[klass.resource_type.resource_type.lower()] = klass.resource_type
+    def register_arm_specific(registry, resource_class):
 
-                if klass.resource_type.enable_tag_operations:
-                    klass.action_registry.register('tag', Tag)
-                    klass.action_registry.register('untag', RemoveTag)
-                    klass.action_registry.register('auto-tag-user', AutoTagUser)
-                    klass.action_registry.register('auto-tag-date', AutoTagDate)
-                    klass.action_registry.register('tag-trim', TagTrim)
-                    klass.filter_registry.register('marked-for-op', TagActionFilter)
-                    klass.action_registry.register('mark-for-op', TagDelayedAction)
+        if not issubclass(resource_class, ArmResourceManager):
+            return
 
-                if resource != 'armresource':
-                    klass.filter_registry.register('cost', CostFilter)
+        arm_resource_types[
+            resource_class.resource_type.resource_type.lower()] = resource_class.resource_type
 
-                klass.filter_registry.register('metric', MetricFilter)
-                klass.filter_registry.register('policy-compliant', PolicyCompliantFilter)
-                klass.filter_registry.register('resource-lock', ResourceLockFilter)
-                klass.action_registry.register('lock', LockAction)
-                klass.filter_registry.register('offhour', AzureOffHour)
-                klass.filter_registry.register('onhour', AzureOnHour)
+        if resource_class.resource_type.enable_tag_operations:
+            resource_class.action_registry.register('tag', Tag)
+            resource_class.action_registry.register('untag', RemoveTag)
+            resource_class.action_registry.register('auto-tag-user', AutoTagUser)
+            resource_class.action_registry.register('auto-tag-date', AutoTagDate)
+            resource_class.action_registry.register('tag-trim', TagTrim)
+            resource_class.filter_registry.register('marked-for-op', TagActionFilter)
+            resource_class.action_registry.register('mark-for-op', TagDelayedAction)
 
-                klass.action_registry.register('delete', DeleteAction)
+        if resource_class.type != 'armresource':
+            resource_class.filter_registry.register('cost', CostFilter)
 
-                if klass.resource_type.diagnostic_settings_enabled:
-                    klass.filter_registry.register('diagnostic-settings', DiagnosticSettingsFilter)
+        resource_class.filter_registry.register('metric', MetricFilter)
+        resource_class.filter_registry.register('policy-compliant', PolicyCompliantFilter)
+        resource_class.filter_registry.register('resource-lock', ResourceLockFilter)
+        resource_class.action_registry.register('lock', LockAction)
+        resource_class.filter_registry.register('offhour', AzureOffHour)
+        resource_class.filter_registry.register('onhour', AzureOnHour)
+
+        resource_class.action_registry.register('delete', DeleteAction)
+
+        if resource_class.resource_type.diagnostic_settings_enabled:
+            resource_class.filter_registry.register('diagnostic-settings', DiagnosticSettingsFilter)
 
 
-@six.add_metaclass(QueryMeta)
-class ChildArmResourceManager(ChildResourceManager, ArmResourceManager):
+class ChildArmResourceManager(ChildResourceManager, ArmResourceManager, metaclass=QueryMeta):
 
     class resource_type(ChildTypeInfo, ArmTypeInfo):
         pass
 
 
-resources.subscribe(resources.EVENT_FINAL, ArmResourceManager.register_arm_specific)
+resources.subscribe(ArmResourceManager.register_arm_specific)

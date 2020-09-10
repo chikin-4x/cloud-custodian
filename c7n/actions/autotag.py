@@ -1,17 +1,6 @@
 # Copyright 2017-2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-import six
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
 from .core import EventAction
 from c7n.exceptions import PolicyValidationError
@@ -142,16 +131,16 @@ class AutoTagUser(EventAction):
         principal_id_key = self.data.get('principal_id_tag', None)
         if principal_id_key and principal_id_value:
             new_tags[principal_id_key] = principal_id_value
-        for key, value in six.iteritems(new_tags):
+        for key, value in new_tags.items():
             tag_action({'key': key, 'value': value}, self.manager).process(untagged_resources)
         return new_tags
 
+    @classmethod
+    def register_resource(cls, registry, resource_class):
+        if 'auto-tag-user' in resource_class.action_registry:
+            return
+        if resource_class.action_registry.get('tag'):
+            resource_class.action_registry.register('auto-tag-user', AutoTagUser)
 
-def register_action_tag_user(registry, _):
-    for resource in registry.keys():
-        klass = registry.get(resource)
-        if klass.action_registry.get('tag') and not klass.action_registry.get('auto-tag-user'):
-            klass.action_registry.register('auto-tag-user', AutoTagUser)
 
-
-resources.subscribe(resources.EVENT_FINAL, register_action_tag_user)
+resources.subscribe(AutoTagUser.register_resource)

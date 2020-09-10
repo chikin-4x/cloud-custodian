@@ -1,21 +1,13 @@
 # Copyright 2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
 import logging
-from collections import Iterable
+try:
+    from collections.abc import Iterable
+except ImportError:
+    from collections import Iterable
 
-import six
 from c7n_azure import constants
 from c7n_azure.actions.logic_app import LogicAppAction
 from azure.mgmt.resourcegraph.models import QueryRequest
@@ -33,7 +25,7 @@ from c7n.utils import local_session
 log = logging.getLogger('custodian.azure.query')
 
 
-class ResourceQuery(object):
+class ResourceQuery:
 
     def __init__(self, session_factory):
         self.session_factory = session_factory
@@ -59,7 +51,7 @@ class ResourceQuery(object):
             log.error("Failed to query resource.\n"
                       "Type: azure.{0}.\n"
                       "Error: {1}".format(resource_manager.type, e))
-            six.raise_from(Exception('Failed to query resources.'), e)
+            raise
 
         raise TypeError("Enumerating resources resulted in a return"
                         "value which could not be iterated.")
@@ -74,7 +66,7 @@ class ResourceQuery(object):
 
 
 @sources.register('describe-azure')
-class DescribeSource(object):
+class DescribeSource:
     resource_query_factory = ResourceQuery
 
     def __init__(self, manager):
@@ -95,7 +87,7 @@ class DescribeSource(object):
 
 
 @sources.register('resource-graph')
-class ResourceGraphSource(object):
+class ResourceGraphSource:
 
     def __init__(self, manager):
         self.manager = manager
@@ -182,8 +174,7 @@ class TypeMeta(type):
             cls.client)
 
 
-@six.add_metaclass(TypeMeta)
-class TypeInfo(object):
+class TypeInfo(metaclass=TypeMeta):
     doc_groups = None
 
     """api client construction information"""
@@ -200,8 +191,7 @@ class TypeInfo(object):
         return {}
 
 
-@six.add_metaclass(TypeMeta)
-class ChildTypeInfo(TypeInfo):
+class ChildTypeInfo(TypeInfo, metaclass=TypeMeta):
     """api client construction information for child resources"""
     parent_manager_name = ''
     annotate_parent = True
@@ -227,8 +217,7 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-@six.add_metaclass(QueryMeta)
-class QueryResourceManager(ResourceManager):
+class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     class resource_type(TypeInfo):
         pass
 
@@ -258,7 +247,9 @@ class QueryResourceManager(ResourceManager):
         return self.get_session().client(service)
 
     def get_cache_key(self, query):
-        return {'source_type': self.source_type, 'query': query}
+        return {'source_type': self.source_type,
+                'query': query,
+                'resource': str(self.__class__.__name__)}
 
     @classmethod
     def get_model(cls):
@@ -315,18 +306,16 @@ class QueryResourceManager(ResourceManager):
         return [r.serialize(True) for r in data]
 
     @staticmethod
-    def register_actions_and_filters(registry, _):
-        for resource in registry.keys():
-            klass = registry.get(resource)
-            klass.action_registry.register('notify', Notify)
-            klass.action_registry.register('logic-app', LogicAppAction)
+    def register_actions_and_filters(registry, resource_class):
+        resource_class.action_registry.register('notify', Notify)
+        if 'logic-app' not in resource_class.action_registry:
+            resource_class.action_registry.register('logic-app', LogicAppAction)
 
     def validate(self):
         self.source.validate()
 
 
-@six.add_metaclass(QueryMeta)
-class ChildResourceManager(QueryResourceManager):
+class ChildResourceManager(QueryResourceManager, metaclass=QueryMeta):
     child_source = 'describe-child-azure'
     parent_manager = None
 
@@ -382,16 +371,15 @@ class ChildResourceManager(QueryResourceManager):
                         "value which could not be iterated.")
 
     @staticmethod
-    def register_child_specific(registry, _):
-        for resource in registry.keys():
-            klass = registry.get(resource)
-            if issubclass(klass, ChildResourceManager):
+    def register_child_specific(registry, resource_class):
+        if not issubclass(resource_class, ChildResourceManager):
+            return
 
-                # If Child Resource doesn't annotate parent, there is no way to filter based on
-                # parent properties.
-                if klass.resource_type.annotate_parent:
-                    klass.filter_registry.register('parent', ParentFilter)
+        # If Child Resource doesn't annotate parent, there is no way to filter based on
+        # parent properties.
+        if resource_class.resource_type.annotate_parent:
+            resource_class.filter_registry.register('parent', ParentFilter)
 
 
-resources.subscribe(resources.EVENT_FINAL, QueryResourceManager.register_actions_and_filters)
-resources.subscribe(resources.EVENT_FINAL, ChildResourceManager.register_child_specific)
+resources.subscribe(QueryResourceManager.register_actions_and_filters)
+resources.subscribe(ChildResourceManager.register_child_specific)
