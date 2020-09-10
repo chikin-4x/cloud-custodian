@@ -1,18 +1,6 @@
 # Copyright 2016-2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 import functools
 import fnmatch
 import json
@@ -31,7 +19,7 @@ from c7n.resources.shield import IsShieldProtected, SetShieldProtection
 from c7n.tags import RemoveTag, Tag
 
 
-class Route53Base(object):
+class Route53Base:
 
     permissions = ('route53:ListTagsForResources',)
     retry = staticmethod(get_retry(('Throttled',)))
@@ -94,6 +82,7 @@ class HostedZone(Route53Base, QueryResourceManager):
         universal_taggable = True
         # Denotes this resource type exists across regions
         global_resource = True
+        cfn_type = 'AWS::Route53::HostedZone'
 
     def get_arns(self, resource_set):
         arns = []
@@ -116,6 +105,7 @@ class HealthCheck(Route53Base, QueryResourceManager):
         enum_spec = ('list_health_checks', 'HealthChecks', None)
         name = id = 'Id'
         universal_taggable = True
+        cfn_type = 'AWS::Route53::HealthCheck'
 
 
 @resources.register('rrset')
@@ -127,6 +117,7 @@ class ResourceRecordSet(ChildResourceManager):
         parent_spec = ('hostedzone', 'HostedZoneId', None)
         enum_spec = ('list_resource_record_sets', 'ResourceRecordSets', None)
         name = id = 'Name'
+        cfn_type = 'AWS::Route53::RecordSet'
 
 
 @resources.register('r53domain')

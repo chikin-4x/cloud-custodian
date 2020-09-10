@@ -1,16 +1,6 @@
 # Copyright 2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
 import json
 import time
@@ -18,7 +8,6 @@ import os
 import shutil
 import sys
 
-import mock
 
 from c7n.exceptions import PolicyValidationError
 from c7n.testing import functional
@@ -62,8 +51,7 @@ class FunctionTest(BaseTest):
             func_info['name'],
             'projects/custodian-1291/locations/us-central1/functions/custodian-dev')
 
-    @mock.patch('c7n.policy.PolicyCollection.from_data')
-    def test_handler_run(self, from_data):
+    def test_handler_run(self):
         func_cwd = self.get_temp_dir()
         output_temp = self.get_temp_dir()
         pdata = {
@@ -79,9 +67,11 @@ class FunctionTest(BaseTest):
         event = event_data('bq-dataset-create.json')
         p = self.load_policy(pdata)
 
+        from c7n.policy import PolicyCollection
+        self.patch(PolicyCollection, 'from_data', staticmethod(lambda *args, **kw: [p]))
         self.patch(p, 'push', lambda evt, ctx: None)
         self.patch(handler, 'get_tmp_output_dir', lambda: output_temp)
-        from_data.return_value = [p]
+
         self.change_cwd(func_cwd)
         self.assertEqual(handler.run(event), True)
 
@@ -104,6 +94,23 @@ class FunctionTest(BaseTest):
         self.assertRaises(NotImplementedError, exec_mode.run)
         self.assertRaises(NotImplementedError, exec_mode.provision)
         self.assertEqual(None, exec_mode.validate())
+
+    def test_policy_context_deps(self):
+        p = self.load_policy({
+            'name': 'check',
+            'resource': 'gcp.instance',
+            'mode': {
+                'type': 'gcp-periodic',
+                'schedule': 'every 2 hours'}},
+            output_dir='gs://somebucket/some-prefix',
+            log_group='gcp',
+            config={'metrics': 'gcp'})
+        pf = mu.PolicyFunction(p, archive=True)
+        self.assertEqual(
+            pf.get_output_deps(),
+            ['google-cloud-monitoring',
+             'google-cloud-storage',
+             'google-cloud-logging'])
 
     def test_periodic_validate_tz(self):
         self.assertRaises(

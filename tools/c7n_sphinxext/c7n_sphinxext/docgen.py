@@ -1,18 +1,7 @@
 # Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
+import hashlib
 import logging
 import operator
 import os
@@ -31,6 +20,7 @@ from sphinx.util.nodes import nested_parse_with_titles
 
 from c7n.schema import (
     ElementSchema, resource_vocabulary, generate as generate_schema)
+from c7n.policy import execution
 from c7n.resources import load_resources
 from c7n.provider import clouds
 
@@ -126,6 +116,23 @@ class CustodianSchema(CustodianDirective):
             dict(name=schema_path, schema_yaml=schema_yaml))
 
 
+def get_provider_modes(provider):
+    # little bit messy
+    # c7n. prefix ~ aws
+    # except pull which is common to all.
+    results = []
+    module_prefix = "c7n_%s." % provider if provider != "aws" else "c7n."
+    pull = None
+    for name, klass in execution.items():
+        if klass.type == 'pull':
+            pull = klass
+        if klass.__module__.startswith(module_prefix):
+            results.append(klass)
+    results = list(sorted(results, key=operator.attrgetter('type')))
+    results.insert(0, pull)
+    return results
+
+
 INITIALIZED = False
 
 
@@ -168,6 +175,23 @@ def main(provider, output_dir, group_by):
         pdb.post_mortem(sys.exc_info()[-1])
 
 
+def write_modified_file(fpath, content):
+    content_md5 = hashlib.md5(content.encode('utf8'))
+
+    if os.path.exists(fpath):
+        with open(fpath, 'rb') as fh:
+            file_md5 = hashlib.md5(fh.read())
+    else:
+        file_md5 = None
+
+    if file_md5 and content_md5.hexdigest() == file_md5.hexdigest():
+        return False
+
+    with open(fpath, 'w') as fh:
+        fh.write(content)
+    return True
+
+
 def resource_file_name(output_dir, r):
     return os.path.join(
         output_dir, ("%s.rst" % r.type).replace(' ', '-').lower())
@@ -186,7 +210,7 @@ def _main(provider, output_dir, group_by):
     group_by = operator.attrgetter(group_by or "type")
 
     files = []
-
+    written = 0
     groups = {}
 
     for r in provider_class.resources.values():
@@ -199,9 +223,9 @@ def _main(provider, output_dir, group_by):
     # Create individual resources pages
     for r in provider_class.resources.values():
         rpath = resource_file_name(output_dir, r)
-        with open(rpath, 'w') as fh:
-            t = env.get_template('provider-resource.rst')
-            fh.write(t.render(
+        t = env.get_template('provider-resource.rst')
+        written += write_modified_file(
+            rpath, t.render(
                 provider_name=provider,
                 resource=r))
 
@@ -210,9 +234,10 @@ def _main(provider, output_dir, group_by):
         group = sorted(group, key=operator.attrgetter('type'))
         rpath = os.path.join(
             output_dir, ("group-%s.rst" % key).replace(' ', '-').lower())
-        with open(rpath, 'w') as fh:
-            t = env.get_template('provider-group.rst')
-            fh.write(t.render(
+        t = env.get_template('provider-group.rst')
+        written += write_modified_file(
+            rpath,
+            t.render(
                 provider_name=provider,
                 key=key,
                 resource_files=[os.path.basename(
@@ -223,7 +248,7 @@ def _main(provider, output_dir, group_by):
     # Write out common provider filters & actions
     common_actions = {}
     common_filters = {}
-    for r in provider_class.resources.values():
+    for _, r in sorted(provider_class.resources.items()):
         for f in ElementSchema.elements(r.filter_registry):
             if not f.schema_alias:
                 continue
@@ -237,30 +262,47 @@ def _main(provider, output_dir, group_by):
     fpath = os.path.join(
         output_dir,
         ("%s-common-filters.rst" % provider_class.type.lower()))
-    with open(fpath, 'w') as fh:
-        t = env.get_template('provider-common-elements.rst')
-        fh.write(t.render(
+
+    t = env.get_template('provider-common-elements.rst')
+    written += write_modified_file(
+        fpath,
+        t.render(
             provider_name=provider_class.display_name,
             element_type='filters',
             elements=[common_filters[k] for k in sorted(common_filters)]))
-        files.insert(0, os.path.basename(fpath))
+    files.insert(0, os.path.basename(fpath))
 
     fpath = os.path.join(
         output_dir,
         ("%s-common-actions.rst" % provider_class.type.lower()))
-    with open(fpath, 'w') as fh:
-        t = env.get_template('provider-common-elements.rst')
-        fh.write(t.render(
+    t = env.get_template('provider-common-elements.rst')
+    written += write_modified_file(
+        fpath,
+        t.render(
             provider_name=provider_class.display_name,
             element_type='actions',
             elements=[common_actions[k] for k in sorted(common_actions)]))
-        files.insert(0, os.path.basename(fpath))
+    files.insert(0, os.path.basename(fpath))
 
-    log.info("%s Wrote %d resources groups", provider.title(), len(files))
+    # Write out provider modes
+    modes = get_provider_modes(provider)
+    mode_path = os.path.join(output_dir, '%s-modes.rst' % provider_class.type.lower())
+    t = env.get_template('provider-mode.rst')
+    written += write_modified_file(
+        mode_path,
+        t.render(
+            provider_name=provider_class.display_name,
+            modes=modes))
+    files.insert(0, os.path.basename(mode_path))
 
     # Write out the provider index
     provider_path = os.path.join(output_dir, 'index.rst')
-    with open(provider_path, 'w') as fh:
-        log.info("Writing Provider Index to %s", provider_path)
-        t = env.get_template('provider-index.rst')
-        fh.write(t.render(provider_name=provider_class.display_name, files=files))
+    t = env.get_template('provider-index.rst')
+    written += write_modified_file(
+        provider_path,
+        t.render(
+            provider_name=provider_class.display_name,
+            files=files))
+
+    if written:
+        log.info("%s Wrote %d files", provider.title(), written)
