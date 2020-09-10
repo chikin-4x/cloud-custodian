@@ -1,17 +1,17 @@
 # Copyright 2016-2017 Capital One Services, LLC
+
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 import csv
 import io
-import jmespath
 import json
-import os.path
 import logging
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qsl, urlparse
 import zlib
 from contextlib import closing
 
+import jmespath
 from c7n.utils import format_string_values
 
 log = logging.getLogger('custodian.resolver')
@@ -117,13 +117,14 @@ class ValuesFrom:
         }
     }
 
-    def __init__(self, data, manager):
+    def __init__(self, data, manager, event=None):
         config_args = {
             'account_id': manager.config.account_id,
             'region': manager.config.region
         }
         self.data = format_string_values(data, **config_args)
         self.manager = manager
+        self.event = event
         self.cache = manager._cache
         self.resolver = URIResolver(manager.session_factory, manager._cache)
 
@@ -163,9 +164,18 @@ class ValuesFrom:
         if format == 'json':
             data = json.loads(contents)
             if 'expr' in self.data:
-                res = jmespath.search(self.data['expr'], data)
+                # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
+                if self.event:
+                    try:
+                        expr = self.data['expr'].format(**self.event)
+                        log.debug('Expression after substitution:  %s' % expr)
+                    except KeyError as e:
+                        log.error('Failed substituting into expression: %s' % str(e))
+                else:
+                    expr = self.data['expr']
+                res = jmespath.search(expr, data)
                 if res is None:
-                    log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
+                    log.warning('ValueFrom filter: %s key returned None' % expr)
                 return res
         elif format == 'csv' or format == 'csv2dict':
             data = csv.reader(io.StringIO(contents))
@@ -176,7 +186,11 @@ class ValuesFrom:
                     return [d[self.data['expr']] for d in data]
                 data = list(data)
             if 'expr' in self.data:
-                res = jmespath.search(self.data['expr'], data)
+                if self.event:
+                    expr = self.data['expr'].format(**self.event)
+                else:
+                    expr = self.data['expr']
+                res = jmespath.search(expr, data)
                 if res is None:
                     log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
                 return res

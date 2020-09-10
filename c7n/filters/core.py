@@ -4,9 +4,9 @@
 """
 Resource Filtering Logic
 """
+
 import copy
 import datetime
-from datetime import timedelta
 import fnmatch
 import ipaddress
 import logging
@@ -196,6 +196,7 @@ class Filter(Element):
     def __init__(self, data, manager=None):
         self.data = data
         self.manager = manager
+        self.event = {}
 
     def get_permissions(self):
         return self.permissions
@@ -206,6 +207,7 @@ class Filter(Element):
 
     def process(self, resources, event=None):
         """ Bulk process resources and return filtered set."""
+        self.event = event
         return list(filter(self, resources))
 
     def get_block_operator(self):
@@ -535,6 +537,7 @@ class ValueFilter(BaseValueFilter):
         return self
 
     def __call__(self, i):
+        # i is the aws describe call results
         if self.data.get('value_type') == 'resource_count':
             return self.process(i)
 
@@ -557,13 +560,14 @@ class ValueFilter(BaseValueFilter):
         return super(ValueFilter, self).get_resource_value(k, i, self.data.get('value_regex'))
 
     def match(self, i):
+        # i is the describe resource response. ie. aws ec2 describe-instance --instance-id=<instance_id>
         if self.v is None and len(self.data) == 1:
             [(self.k, self.v)] = self.data.items()
         elif self.v is None and not hasattr(self, 'content_initialized'):
             self.k = self.data.get('key')
             self.op = self.data.get('op')
             if 'value_from' in self.data:
-                values = ValuesFrom(self.data['value_from'], self.manager)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')
