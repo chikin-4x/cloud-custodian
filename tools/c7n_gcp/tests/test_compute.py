@@ -1,16 +1,6 @@
 # Copyright 2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 
 import re
 import time
@@ -147,6 +137,26 @@ class InstanceTest(BaseTest):
                      'zone': resources[0]['zone'].rsplit('/', 1)[-1]})
         self.assertTrue(result['items'][0]['labels']['custodian_status']
                         .startswith("resource_policy-start"))
+
+    def test_detach_disks_from_instance(self):
+        project_id = 'custodian-tests'
+        factory = self.replay_flight_data('instance-detach-disks', project_id=project_id)
+        p = self.load_policy(
+            {'name': 'idetach',
+             'resource': 'gcp.instance',
+             'filters': [{'name': 'test-ingwar'}],
+             'actions': [{'type': 'detach-disks'}]},
+            session_factory=factory)
+        resources = p.run()
+        self.assertEqual(len(resources), 1)
+        if self.recording:
+            time.sleep(5)
+        client = p.resource_manager.get_client()
+        result = client.execute_query(
+            'list', {'project': project_id,
+                     'filter': 'name = test-ingwar',
+                     'zone': resources[0]['zone'].rsplit('/', 1)[-1]})
+        self.assertIsNone(result['items'][0].get("disks"))
 
 
 class DiskTest(BaseTest):

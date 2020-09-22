@@ -1,18 +1,6 @@
 # Copyright 2015-2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 from botocore.client import ClientError
 
 from collections import Counter
@@ -31,8 +19,10 @@ import c7n.filters.vpc as net_filters
 
 from c7n.manager import resources
 from c7n import query
+from c7n.resources.securityhub import PostFinding
 from c7n.tags import TagActionFilter, DEFAULT_TAG, TagCountFilter, TagTrim, TagDelayedAction
-from c7n.utils import local_session, type_schema, chunks, get_retry
+from c7n.utils import (
+    local_session, type_schema, chunks, get_retry, select_keys)
 
 from .ec2 import deserialize_user_data
 
@@ -52,6 +42,7 @@ class ASG(query.QueryResourceManager):
         filter_name = 'AutoScalingGroupNames'
         filter_type = 'list'
         config_type = 'AWS::AutoScaling::AutoScalingGroup'
+        cfn_type = 'AWS::AutoScaling::AutoScalingGroup'
 
         default_report_fields = (
             'AutoScalingGroupName',
@@ -73,7 +64,7 @@ ASG.filter_registry.register('marked-for-op', TagActionFilter)
 ASG.filter_registry.register('network-location', net_filters.NetworkLocation)
 
 
-class LaunchInfo(object):
+class LaunchInfo:
 
     permissions = ("ec2:DescribeLaunchTemplateVersions",
                    "autoscaling:DescribeLaunchConfigurations",)
@@ -123,12 +114,12 @@ class LaunchInfo(object):
 
         lid = asg.get('LaunchTemplate')
         if lid is not None:
-            return (lid['LaunchTemplateId'], lid['Version'])
+            return (lid['LaunchTemplateId'], lid.get('Version', '$Default'))
 
         if 'MixedInstancesPolicy' in asg:
             mip_spec = asg['MixedInstancesPolicy'][
                 'LaunchTemplate']['LaunchTemplateSpecification']
-            return (mip_spec['LaunchTemplateId'], mip_spec['Version'])
+            return (mip_spec['LaunchTemplateId'], mip_spec.get('Version', '$Default'))
 
         # we've noticed some corner cases where the asg name is the lc name, but not
         # explicitly specified as launchconfiguration attribute.
@@ -272,23 +263,23 @@ class ConfigValidFilter(Filter):
 
     def get_subnets(self):
         manager = self.manager.get_resource_manager('subnet')
-        return set([s['SubnetId'] for s in manager.resources()])
+        return {s['SubnetId'] for s in manager.resources()}
 
     def get_security_groups(self):
         manager = self.manager.get_resource_manager('security-group')
-        return set([s['GroupId'] for s in manager.resources()])
+        return {s['GroupId'] for s in manager.resources()}
 
     def get_key_pairs(self):
         manager = self.manager.get_resource_manager('key-pair')
-        return set([k['KeyName'] for k in manager.resources()])
+        return {k['KeyName'] for k in manager.resources()}
 
     def get_elbs(self):
         manager = self.manager.get_resource_manager('elb')
-        return set([e['LoadBalancerName'] for e in manager.resources()])
+        return {e['LoadBalancerName'] for e in manager.resources()}
 
     def get_appelb_target_groups(self):
         manager = self.manager.get_resource_manager('app-elb-target-group')
-        return set([a['TargetGroupArn'] for a in manager.resources()])
+        return {a['TargetGroupArn'] for a in manager.resources()}
 
     def get_images(self):
         images = self.launch_info.get_image_map()
@@ -312,9 +303,8 @@ class ConfigValidFilter(Filter):
                     continue
                 snaps.add(bd['Ebs']['SnapshotId'].strip())
         manager = self.manager.get_resource_manager('ebs-snapshot')
-        return set([
-            s['SnapshotId'] for s in manager.get_resources(
-                list(snaps), cache=False)])
+        return {s['SnapshotId'] for s in manager.get_resources(
+                list(snaps), cache=False)}
 
     def process(self, asgs, event=None):
         self.initialize(asgs)
@@ -576,6 +566,8 @@ class ImageAgeFilter(AgeFilter):
 
     def get_resource_date(self, asg):
         cfg = self.launch_info.get(asg)
+        if cfg is None:
+            cfg = {}
         ami = self.images.get(cfg.get('ImageId'), {})
         return parse(ami.get(
             self.date_attribute, "2000-01-01T01:01:01.000Z"))
@@ -611,7 +603,7 @@ class ImageFilter(ValueFilter):
         return super(ImageFilter, self).process(asgs, event)
 
     def __call__(self, i):
-        image = self.launch_info.get(i).get('ImageId', None)
+        image = self.images.get(self.launch_info.get(i).get('ImageId', None))
         # Finally, if we have no image...
         if not image:
             self.log.warning(
@@ -729,6 +721,26 @@ class PropagatedTagFilter(Filter):
                 if not match and not all(k in tags for k in keys):
                     results.append(asg)
         return results
+
+
+@ASG.action_registry.register('post-finding')
+class AsgPostFinding(PostFinding):
+
+    resource_type = 'AwsAutoScalingAutoScalingGroup'
+    launch_info = LaunchInfo(None)
+
+    def format_resource(self, r):
+        envelope, payload = self.format_envelope(r)
+        details = select_keys(r, [
+            'CreatedTime', 'HealthCheckType', 'HealthCheckGracePeriod', 'LoadBalancerNames'])
+        lid = self.launch_info.get_launch_id(r)
+        if isinstance(lid, tuple):
+            lid = "%s:%s" % lid
+        details['CreatedTime'] = details['CreatedTime'].isoformat()
+        # let's arbitrarily cut off key information per security hub's restrictions...
+        details['LaunchConfigurationName'] = lid[:32]
+        payload.update(details)
+        return envelope
 
 
 @ASG.action_registry.register('tag-trim')
@@ -1215,7 +1227,7 @@ class PropagateTags(Action):
         if self.data.get('trim', False):
             instances = [self.instance_map[i] for i in instance_ids]
             self.prune_instance_tags(client, asg, tag_set, instances)
-        if not self.manager.config.dryrun:
+        if not self.manager.config.dryrun and instances:
             client.create_tags(
                 Resources=instance_ids,
                 Tags=[{'Key': k, 'Value': v} for k, v in tag_map.items()])
@@ -1395,6 +1407,7 @@ class MarkForOp(TagDelayedAction):
         key={'type': 'string'},
         tag={'type': 'string'},
         tz={'type': 'string'},
+        msg={'type': 'string'},
         message={'type': 'string'},
         days={'type': 'number', 'minimum': 0},
         hours={'type': 'number', 'minimum': 0})
@@ -1406,7 +1419,7 @@ class MarkForOp(TagDelayedAction):
         d = {
             'op': self.data.get('op', 'stop'),
             'tag': self.data.get('key', self.data.get('tag', DEFAULT_TAG)),
-            'msg': self.data.get('message', self.default_template),
+            'msg': self.data.get('message', self.data.get('msg', self.default_template)),
             'tz': self.data.get('tz', 'utc'),
             'days': self.data.get('days', 0),
             'hours': self.data.get('hours', 0)}
@@ -1632,7 +1645,7 @@ class LaunchConfig(query.QueryResourceManager):
             'describe_launch_configurations', 'LaunchConfigurations', None)
         filter_name = 'LaunchConfigurationNames'
         filter_type = 'list'
-        config_type = 'AWS::AutoScaling::LaunchConfiguration'
+        cfn_type = config_type = 'AWS::AutoScaling::LaunchConfiguration'
 
 
 @LaunchConfig.filter_registry.register('age')
@@ -1681,9 +1694,8 @@ class UnusedLaunchConfig(Filter):
 
     def process(self, configs, event=None):
         asgs = self.manager.get_resource_manager('asg').resources()
-        used = set([
-            a.get('LaunchConfigurationName', a['AutoScalingGroupName'])
-            for a in asgs if not a.get('LaunchTemplate')])
+        used = {a.get('LaunchConfigurationName', a['AutoScalingGroupName'])
+                for a in asgs if not a.get('LaunchTemplate')}
         return [c for c in configs if c['LaunchConfigurationName'] not in used]
 
 

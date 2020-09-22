@@ -1,34 +1,22 @@
 # Copyright 2015-2017 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 import base64
 from datetime import datetime, timedelta
 import functools
 import json
 import os
 import time
+import yaml
 
 import jinja2
 import jmespath
 from botocore.exceptions import ClientError
 from dateutil import parser
 from dateutil.tz import gettz, tzutc
-from ruamel import yaml
 
 
-class Providers(object):
+class Providers:
     AWS = 0
     Azure = 1
 
@@ -91,7 +79,10 @@ def get_rendered_jinja(
 def get_resource_tag_targets(resource, target_tag_keys):
     if 'Tags' not in resource:
         return []
-    tags = {tag['Key']: tag['Value'] for tag in resource['Tags']}
+    if isinstance(resource['Tags'], dict):
+        tags = resource['Tags']
+    else:
+        tags = {tag['Key']: tag['Value'] for tag in resource['Tags']}
     targets = []
     for target_tag_key in target_tag_keys:
         if target_tag_key in tags:
@@ -118,7 +109,7 @@ def setup_defaults(config):
     config.setdefault('region', 'us-east-1')
     config.setdefault('ses_region', config.get('region'))
     config.setdefault('memory', 1024)
-    config.setdefault('runtime', 'python2.7')
+    config.setdefault('runtime', 'python3.7')
     config.setdefault('timeout', 300)
     config.setdefault('subnets', None)
     config.setdefault('security_groups', None)
@@ -127,6 +118,7 @@ def setup_defaults(config):
     config.setdefault('ldap_bind_dn', None)
     config.setdefault('ldap_bind_user', None)
     config.setdefault('ldap_bind_password', None)
+    config.setdefault('endpoint_url', None)
     config.setdefault('datadog_api_key', None)
     config.setdefault('slack_token', None)
     config.setdefault('slack_webhook', None)
@@ -279,9 +271,8 @@ def resource_format(resource, resource_type):
             resource['account_id'],
             resource['account_name'])
     elif resource_type == 'cloudtrail':
-        return " %s %s" % (
-            resource['account_id'],
-            resource['account_name'])
+        return "%s" % (
+            resource['Name'])
     elif resource_type == 'vpc':
         return "%s " % (
             resource['VpcId'])

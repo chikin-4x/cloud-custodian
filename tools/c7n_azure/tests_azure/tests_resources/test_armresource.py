@@ -1,22 +1,10 @@
 # Copyright 2015-2018 Capital One Services, LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+# Copyright The Cloud Custodian Authors.
+# SPDX-License-Identifier: Apache-2.0
 from ..azure_common import BaseTest, arm_template, cassette_name
-from jsonschema.exceptions import ValidationError
 from mock import patch
 from c7n_azure.resources.generic_arm_resource import GenericArmResource
+from c7n.exceptions import PolicyValidationError
 
 
 class ArmResourceTest(BaseTest):
@@ -163,7 +151,8 @@ class ArmResourceTest(BaseTest):
                  'op': 'lt',
                  'threshold': 0}],
         }
-        self.assertRaises(ValidationError, self.load_policy, policy, validate=True)
+        self.assertRaises(
+            PolicyValidationError, self.load_policy, policy, validate=True)
 
     def test_metric_filter_invalid_missing_op(self):
         policy = {
@@ -180,7 +169,8 @@ class ArmResourceTest(BaseTest):
                  'aggregation': 'total',
                  'threshold': 0}],
         }
-        self.assertRaises(ValidationError, self.load_policy, policy, validate=True)
+        self.assertRaises(
+            PolicyValidationError, self.load_policy, policy, validate=True)
 
     def test_metric_filter_invalid_missing_threshold(self):
         policy = {
@@ -197,7 +187,8 @@ class ArmResourceTest(BaseTest):
                  'aggregation': 'total',
                  'op': 'lt'}],
         }
-        self.assertRaises(ValidationError, self.load_policy, policy, validate=True)
+        self.assertRaises(
+            PolicyValidationError, self.load_policy, policy, validate=True)
 
     fake_arm_resources = [
         {
