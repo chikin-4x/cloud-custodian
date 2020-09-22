@@ -164,6 +164,7 @@ class ValuesFrom(object):
                         log.debug('Expression after substitution:  %s' % expr)
                     except KeyError as e:
                         log.error('Failed substituting into expression: %s' % str(e))
+                        expr = self.data['expr']
                 else:
                     expr = self.data['expr']
                 res = jmespath.search(expr, data)
