@@ -6,10 +6,11 @@ import csv
 import io
 import json
 import logging
-from urllib.request import Request, urlopen
-from urllib.parse import parse_qsl, urlparse
+import os
 import zlib
 from contextlib import closing
+from urllib.parse import parse_qsl, urlparse
+from urllib.request import Request, urlopen
 
 import jmespath
 from c7n.utils import format_string_values
