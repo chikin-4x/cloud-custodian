@@ -7,12 +7,12 @@ try:
 except ImportError:
     certifi = None
 
-import jmespath
-
-import urllib3
 from urllib import parse
 
+import jmespath
+import urllib3
 from c7n import utils
+
 from .core import EventAction
 
 
@@ -105,11 +105,21 @@ class Webhook(EventAction):
             prepared_headers['Content-Type'] = 'application/json'
 
         try:
+            # Implement IAM Auth
+            import boto3
+            from botocore.auth import SigV4Auth
+            from botocore.awsrequest import AWSRequest
+            req = AWSRequest(method=self.method.upper(), url=prepared_url, data=prepared_body)
+            SigV4Auth(boto3.session.Session().get_credentials(), 'execute-api', self.manager.config.region).add_auth(req)
+            header = dict(req.headers.items())
+
+            all_headers = {**header, **prepared_headers}
+
             res = self.http.request(
                 method=self.method,
                 url=prepared_url,
                 body=prepared_body,
-                headers=prepared_headers)
+                headers=all_headers)
 
             self.log.info("%s got response %s with URL %s" %
                           (self.method, res.status, prepared_url))
