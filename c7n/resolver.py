@@ -204,6 +204,9 @@ class ValuesFrom:
                         if current_time > expiration:
                             log.warning(f"Whitelist has expired, returning None...")
                             return None
+                        else:
+                            log.debug("Whitelist is valid")
+                            return res
                 else:
                     log.warning(f"ValueFrom filter: {expr} key returned None")
 
