@@ -199,7 +199,7 @@ class ValuesFrom:
                         import datetime
                         import time
                         current_time = datetime.datetime.fromtimestamp(time.time())
-                        expiration = datetime.datetime.fromtimestamp(valid_until)
+                        expiration = datetime.datetime.fromtimestamp(int(valid_until))
                         log.debug(f"Current Time: {current_time}, Expiration: {expiration}")
                         if current_time > expiration:
                             log.warning(f"Whitelist has expired, returning None...")
