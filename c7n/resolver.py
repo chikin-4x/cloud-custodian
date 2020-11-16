@@ -187,7 +187,8 @@ class ValuesFrom:
 
                     if value is None or valid_until is None or value is "" or valid_until is "":
                         log.warning(f"Value is: {value}, ValidUntil is: {valid_until}")
-                        return None
+                        log.debug("Returning res since this might not be whitelisting...")
+                        return res
                     else:
                         import datetime
                         import time
