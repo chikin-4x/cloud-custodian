@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlparse
 from urllib.request import Request, urlopen
 
 import jmespath
+
 from c7n.utils import format_string_values
 
 log = logging.getLogger('custodian.resolver')
@@ -169,15 +170,36 @@ class ValuesFrom:
                 if self.event:
                     try:
                         expr = self.data['expr'].format(**self.event)
-                        log.debug('Expression after substitution:  %s' % expr)
+                        log.debug(f"Expression after substitution:  {expr}")
                     except KeyError as e:
-                        log.error('Failed substituting into expression: %s' % str(e))
+                        log.error(f"Failed substituting into expression: {str(e)}")
                         expr = self.data['expr']
                 else:
                     expr = self.data['expr']
+
                 res = jmespath.search(expr, data)
-                if res is None:
-                    log.warning('ValueFrom filter: %s key returned None' % expr)
+                log.debug(f"JMESPath result: {res}")
+
+                # Checking for whitelist expiration
+                if res is not None:
+                    valid_until = res.get('validUntil', None)
+                    value = res.get('value', None)
+
+                    if value is None or valid_until is None or value is "" or valid_until is "":
+                        log.warning(f"Value is: {value}, ValidUntil is: {valid_until}")
+                        return None
+                    else:
+                        import datetime
+                        import time
+                        current_time = datetime.datetime.fromtimestamp(time.time())
+                        expiration = datetime.datetime.fromtimestamp(valid_until)
+                        log.debug(f"Current Time: {current_time}, Expiration: {expiration}")
+                        if current_time > expiration:
+                            log.warning(f"Whitelist has expired, returning None...")
+                            return None
+                else:
+                    log.warning(f"ValueFrom filter: {expr} key returned None")
+
                 return res
         elif format == 'csv' or format == 'csv2dict':
             data = csv.reader(io.StringIO(contents))
