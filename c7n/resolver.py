@@ -206,7 +206,7 @@ class ValuesFrom:
                             return None
                         else:
                             log.debug("Whitelist is valid")
-                            return res
+                            return value
                 else:
                     log.warning(f"ValueFrom filter: {expr} key returned None")
 
