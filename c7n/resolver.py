@@ -189,7 +189,7 @@ class ValuesFrom:
                     # However, if only one of them returns, we assume this isn't whitelisting and return
                     # the value. This allows for other jmespath expressions to be used besides just
                     # for whitelisting. Hopefully future proofing this part.
-                    if value is None or valid_until is None or value is "" or valid_until is "":
+                    if value is None or valid_until is None or value == "" or valid_until == "":
                         log.warning(f"Value is: {value}, ValidUntil is: {valid_until}")
                         log.debug("Returning res since this might not be whitelisting...")
                         return res
