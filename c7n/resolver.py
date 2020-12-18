@@ -169,6 +169,13 @@ class ValuesFrom:
                 # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
                 if self.event:
                     try:
+                        try:
+                            # Remove the account portion from the arn
+                            self.event['detail']['userIdentity']['arn'] = self.event['detail']['userIdentity']['arn'].split(':')[5]
+                        except KeyError as e:
+                            # Failed to simplify the arn so keep it
+                            pass
+
                         expr = self.data['expr'].format(**self.event)
                         log.debug(f"Expression after substitution:  {expr}")
                     except KeyError as e:
