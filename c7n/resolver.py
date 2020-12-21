@@ -174,6 +174,8 @@ class ValuesFrom:
                             self.event['detail']['userIdentity']['arn'] = self.event['detail']['userIdentity']['arn'].split(':')[5]
                         except Exception as e:
                             # Failed to simplify the arn so keep it
+                            # This might happen on the second or later iterations
+                            log.debug(f"Failed to parse arn: {self.event['detail']['userIdentity']['arn']}")
                             pass
 
                         expr = self.data['expr'].format(**self.event)
