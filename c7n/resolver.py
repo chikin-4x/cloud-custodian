@@ -172,7 +172,7 @@ class ValuesFrom:
                         try:
                             # Remove the account portion from the arn
                             self.event['detail']['userIdentity']['arn'] = self.event['detail']['userIdentity']['arn'].split(':')[5]
-                        except KeyError as e:
+                        except Exception as e:
                             # Failed to simplify the arn so keep it
                             pass
 
