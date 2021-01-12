@@ -566,7 +566,10 @@ class ValueFilter(BaseValueFilter):
             self.k = self.data.get('key')
             self.op = self.data.get('op')
             if 'value_from' in self.data:
-                values = ValuesFrom(self.data['value_from'], self.manager, self.event, key=self.k)
+                # Grab value here to send to ValuesFrom for when the whitelist returns "*"
+                # When that happens, return r instead
+                r = self.get_resource_value(self.k, i)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event, value=r)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')
