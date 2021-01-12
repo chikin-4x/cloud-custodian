@@ -11,22 +11,21 @@ import fnmatch
 import ipaddress
 import logging
 import operator
-import re
 import os
-
-from dateutil.tz import tzutc
-from dateutil.parser import parse
+import re
 from distutils import version
 from random import sample
-import jmespath
 
+import jmespath
 from c7n.element import Element
 from c7n.exceptions import PolicyValidationError
 from c7n.executor import ThreadPoolExecutor
+from c7n.manager import iter_filters
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
-from c7n.utils import set_annotation, type_schema, parse_cidr
-from c7n.manager import iter_filters
+from c7n.utils import parse_cidr, set_annotation, type_schema
+from dateutil.parser import parse
+from dateutil.tz import tzutc
 
 
 class FilterValidationError(Exception):
@@ -567,7 +566,7 @@ class ValueFilter(BaseValueFilter):
             self.k = self.data.get('key')
             self.op = self.data.get('op')
             if 'value_from' in self.data:
-                values = ValuesFrom(self.data['value_from'], self.manager, self.event)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event, key=self.k)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')

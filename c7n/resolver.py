@@ -119,7 +119,7 @@ class ValuesFrom:
         }
     }
 
-    def __init__(self, data, manager, event=None):
+    def __init__(self, data, manager, event=None, key=None):
         config_args = {
             'account_id': manager.config.account_id,
             'region': manager.config.region
@@ -127,6 +127,7 @@ class ValuesFrom:
         self.data = format_string_values(data, **config_args)
         self.manager = manager
         self.event = event
+        self.key = key
         self.cache = manager._cache
         self.resolver = URIResolver(manager.session_factory, manager._cache)
 
@@ -215,6 +216,8 @@ class ValuesFrom:
                             return None
                         else:
                             log.debug("Whitelist is valid")
+                            if value == "*":
+                                return self.key
                             return value
                 else:
                     log.warning(f"ValueFrom filter: {expr} key returned None")
