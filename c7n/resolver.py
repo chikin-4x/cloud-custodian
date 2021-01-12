@@ -217,6 +217,7 @@ class ValuesFrom:
                         else:
                             log.debug("Whitelist is valid")
                             if value == "*":
+                                log.debug(f"Value is *. Returning key: {self.key}")
                                 return self.key
                             return value
                 else:
