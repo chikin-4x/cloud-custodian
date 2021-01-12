@@ -1,39 +1,34 @@
 # Copyright 2016-2017 Capital One Services, LLC
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-from collections import OrderedDict
 import csv
 import datetime
 import functools
-import json
 import io
-from datetime import timedelta
 import itertools
+import json
 import time
-
+from collections import OrderedDict
 from concurrent.futures import as_completed
-from dateutil.tz import tzutc
-from dateutil.parser import parse as parse_date
+from datetime import timedelta
 
 from botocore.exceptions import ClientError
-
-
 from c7n.actions import BaseAction
 from c7n.exceptions import PolicyValidationError
-from c7n.filters import ValueFilter, Filter
-from c7n.filters.multiattr import MultiAttrFilter
+from c7n.filters import Filter, ValueFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
+from c7n.filters.multiattr import MultiAttrFilter
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, DescribeSource, TypeInfo
+from c7n.query import (ConfigSource, DescribeSource, QueryResourceManager,
+                       TypeInfo)
 from c7n.resolver import ValuesFrom
-from c7n.tags import TagActionFilter, TagDelayedAction, Tag, RemoveTag
-from c7n.utils import (
-    get_partition, local_session, type_schema, chunks, filter_empty, QueryParser,
-    select_keys
-)
-
 from c7n.resources.aws import Arn
 from c7n.resources.securityhub import OtherResourcePostFinding
+from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
+from c7n.utils import (QueryParser, chunks, filter_empty, get_partition,
+                       local_session, select_keys, type_schema)
+from dateutil.parser import parse as parse_date
+from dateutil.tz import tzutc
 
 
 class DescribeGroup(DescribeSource):
@@ -1087,6 +1082,92 @@ class RoleDelete(BaseAction):
                     "Role:%s cannot be deleted, set force to detach policy and delete"
                     % r['Arn'])
                 error = e
+            except client.exceptions.NoSuchEntityException:
+                continue
+            except client.exceptions.UnmodifiableEntityException:
+                continue
+        if error:
+            raise error
+
+
+@Role.action_registry.register('detach-managed-policy')
+class DetachManagedPolicy(BaseAction):
+    """Detach a managed policy from the IAM role.
+
+    For example, if you want to automatically detach a managed policy from a role.
+
+    :example:
+
+      .. code-block:: yaml
+
+        - name: iam-detach-admin
+          resource: iam-role
+          filters:
+            - type: has-specific-managed-policy
+              value: AdministratorAccess
+          actions:
+            - type: detach-managed-policy
+              value: AdministratorAccess
+
+    """
+    schema = type_schema('detach-managed-policy', value={'type': 'string'})
+    permissions = ('iam:DetachRolePolicy',)
+
+    def process(self, resources):
+        client = local_session(self.manager.session_factory).client('iam')
+        error = None
+
+        policy = f"arn:aws:iam::aws:policy/{self.data.get('value', '')}"
+        for r in resources:
+            try:
+                client.detach_role_policy(
+                    RoleName=r['RoleName'],
+                    PolicyArn=policy
+                )
+            except client.exceptions.NoSuchEntityException:
+                continue
+            except client.exceptions.UnmodifiableEntityException:
+                continue
+        if error:
+            raise error
+
+
+@Role.action_registry.register('delete-inline-policy')
+class DeleteInlinePolicy(BaseAction):
+    """Deletes an inline policy from the IAM role.
+
+    For example, if you want to automatically delete an inline policy from a role.
+
+    :example:
+
+      .. code-block:: yaml
+
+        - name: iam-delete-policy
+          resource: iam-role
+          filters:
+            - type: value
+              key: RoleName
+              value: "MySecretRole"
+              op: eq
+          actions:
+            - type: delete-inline-policy
+              value: my-test-policy
+
+    """
+    schema = type_schema('delete-inline-policy', value={'type': 'string'})
+    permissions = ('iam:DetachRolePolicy',)
+
+    def process(self, resources):
+        client = local_session(self.manager.session_factory).client('iam')
+        error = None
+
+        policy = self.data.get('value', '')
+        for r in resources:
+            try:
+                client.delete_role_policy(
+                    RoleName=r['RoleName'],
+                    PolicyName=policy
+                )
             except client.exceptions.NoSuchEntityException:
                 continue
             except client.exceptions.UnmodifiableEntityException:
