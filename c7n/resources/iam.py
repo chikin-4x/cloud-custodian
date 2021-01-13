@@ -1090,48 +1090,6 @@ class RoleDelete(BaseAction):
             raise error
 
 
-@Role.action_registry.register('detach-managed-policy')
-class DetachManagedPolicy(BaseAction):
-    """Detach a managed policy from the IAM role.
-
-    For example, if you want to automatically detach a managed policy from a role.
-
-    :example:
-
-      .. code-block:: yaml
-
-        - name: iam-detach-admin
-          resource: iam-role
-          filters:
-            - type: has-specific-managed-policy
-              value: AdministratorAccess
-          actions:
-            - type: detach-managed-policy
-              value: AdministratorAccess
-
-    """
-    schema = type_schema('detach-managed-policy', value={'type': 'string'})
-    permissions = ('iam:DetachRolePolicy',)
-
-    def process(self, resources):
-        client = local_session(self.manager.session_factory).client('iam')
-        error = None
-
-        policy = f"arn:aws:iam::aws:policy/{self.data.get('value', '')}"
-        for r in resources:
-            try:
-                client.detach_role_policy(
-                    RoleName=r['RoleName'],
-                    PolicyArn=policy
-                )
-            except client.exceptions.NoSuchEntityException:
-                continue
-            except client.exceptions.UnmodifiableEntityException:
-                continue
-        if error:
-            raise error
-
-
 @Role.action_registry.register('delete-inline-policy')
 class DeleteInlinePolicy(BaseAction):
     """Deletes an inline policy from the IAM role.
