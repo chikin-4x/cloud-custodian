@@ -1,4 +1,3 @@
-# Copyright 2015-2017 Capital One Services, LLC
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 """
@@ -1072,10 +1071,11 @@ class CloudWatchEventSource(AWSEventBase):
             payload['detail-type'] = events
         elif event_type == 'phd':
             payload['source'] = ['aws.health']
+            payload.setdefault('detail', {})
             if self.data.get('events'):
-                payload['detail'] = {
+                payload['detail'].update({
                     'eventTypeCode': list(self.data['events'])
-                }
+                })
             if self.data.get('categories', []):
                 payload['detail']['eventTypeCategory'] = self.data['categories']
         elif event_type == 'hub-finding':
