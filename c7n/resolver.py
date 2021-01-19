@@ -1,25 +1,14 @@
-<<<<<<< HEAD
-# Copyright 2016-2017 Capital One Services, LLC
-
-=======
->>>>>>> 2d8d135256d34ed7edeee104eab9b1956f457076
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 import csv
 import io
 import json
 import logging
-<<<<<<< HEAD
-import os
-=======
 import itertools
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qsl, urlparse
->>>>>>> 2d8d135256d34ed7edeee104eab9b1956f457076
 import zlib
 from contextlib import closing
-from urllib.parse import parse_qsl, urlparse
-from urllib.request import Request, urlopen
 
 import jmespath
 
@@ -176,6 +165,7 @@ class ValuesFrom:
         if format == 'json':
             data = json.loads(contents)
             if 'expr' in self.data:
+                expr = None
                 # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
                 if self.event:
                     try:
@@ -246,9 +236,18 @@ class ValuesFrom:
                 if isinstance(self.data.get('expr'), int):
                     return set([d[self.data['expr']] for d in data])
                 data = list(data)
-            if 'expr' in self.data:
-                if self.event:
-                    expr = self.data['expr'].format(**self.event)
+                if 'expr' in self.data:
+                    if self.event:
+                        try:
+                            expr = self.data['expr'].format(**self.event)
+                            log.debug('Expression after substitution:  %s' % expr)
+                        except KeyError as e:
+                            log.error('Failed substituting into expression: %s' % str(e))
+                            expr = self.data['expr']
+                    else:
+                        expr = self.data['expr']
+
+                    return self._get_resource_values(expr, data)
                 else:
                     expr = self.data['expr']
                 res = jmespath.search(expr, data)
