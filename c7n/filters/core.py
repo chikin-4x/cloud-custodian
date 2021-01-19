@@ -16,14 +16,15 @@ from dateutil.tz import tzutc
 from dateutil.parser import parse
 from distutils import version
 from random import sample
-import jmespath
 
+import jmespath
 from c7n.element import Element
 from c7n.exceptions import PolicyValidationError
+from c7n.manager import iter_filters
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
-from c7n.utils import set_annotation, type_schema, parse_cidr, parse_date
-from c7n.manager import iter_filters
+from c7n.utils import parse_cidr, set_annotation, type_schema, parse_date
+
 
 
 class FilterValidationError(Exception):
@@ -548,7 +549,10 @@ class ValueFilter(BaseValueFilter):
             self.k = self.data.get('key')
             self.op = self.data.get('op')
             if 'value_from' in self.data:
-                values = ValuesFrom(self.data['value_from'], self.manager, self.event)
+                # Grab value here to send to ValuesFrom for when the whitelist returns "*"
+                # When that happens, return r instead
+                r = self.get_resource_value(self.k, i)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event, value=r)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')

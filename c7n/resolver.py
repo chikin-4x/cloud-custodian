@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-# Copyright 2016-2017 Capital One Services, LLC
-
-=======
->>>>>>> 2d8d135256d34ed7edeee104eab9b1956f457076
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 import csv
@@ -16,6 +11,7 @@ import zlib
 from contextlib import closing
 
 import jmespath
+
 from c7n.utils import format_string_values
 
 log = logging.getLogger('custodian.resolver')
@@ -121,7 +117,7 @@ class ValuesFrom:
         }
     }
 
-    def __init__(self, data, manager, event=None):
+    def __init__(self, data, manager, event=None, value=None):
         config_args = {
             'account_id': manager.config.account_id,
             'region': manager.config.region
@@ -129,6 +125,7 @@ class ValuesFrom:
         self.data = format_string_values(data, **config_args)
         self.manager = manager
         self.event = event
+        self.value = value
         self.cache = manager._cache
         self.resolver = URIResolver(manager.session_factory, manager._cache)
 
@@ -172,17 +169,60 @@ class ValuesFrom:
                 # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
                 if self.event:
                     try:
+                        try:
+                            # Remove the account portion from the arn
+                            self.event['detail']['userIdentity']['arn'] = self.event['detail']['userIdentity']['arn'].split(':')[5]
+                        except Exception as e:
+                            # Failed to simplify the arn so keep it
+                            # This might happen on the second or later iterations
+                            log.debug(f"Failed to parse arn: {self.event['detail']['userIdentity']['arn']}")
+                            pass
+
                         expr = self.data['expr'].format(**self.event)
-                        log.debug('Expression after substitution:  %s' % expr)
+                        log.debug(f"Expression after substitution:  {expr}")
                     except KeyError as e:
-                        log.error('Failed substituting into expression: %s' % str(e))
+                        log.error(f"Failed substituting into expression: {str(e)}")
                         expr = self.data['expr']
                 else:
                     expr = self.data['expr']
 
-                return self._get_resource_values(expr, data)
-            else:
-                return data
+                res = jmespath.search(expr, data)
+                log.debug(f"JMESPath result: {res}")
+
+                # Checking for whitelist expiration
+                if res is not None:
+                    valid_until = res.get('validUntil', None)
+                    value = res.get('value', None)
+
+                    # If value AND valid_until are both not None, then we assume this is whitelisting
+                    # However, if only one of them returns, we assume this isn't whitelisting and return
+                    # the value. This allows for other jmespath expressions to be used besides just
+                    # for whitelisting. Hopefully future proofing this part.
+                    if value is None or valid_until is None or value == "" or valid_until == "":
+                        log.warning(f"Value is: {value}, ValidUntil is: {valid_until}")
+                        log.debug("Returning res since this might not be whitelisting...")
+                        return res
+                    else:
+                        # If we made it here, we assume we are wanting to do whitelisting and need
+                        # to check the expiration time to see if it's valid
+                        import datetime
+                        import time
+                        current_time = datetime.datetime.fromtimestamp(time.time())
+                        expiration = datetime.datetime.fromtimestamp(int(valid_until))
+                        log.debug(f"Current Time: {current_time}, Expiration: {expiration}")
+                        if current_time > expiration:
+                            log.warning(f"Whitelist has expired, returning None...")
+                            return None
+                        else:
+                            log.debug("Whitelist is valid")
+                            if value == "*":
+                                log.debug(f"Value is *... Returning value: {self.value}")
+                                return self.value
+                            return value
+                else:
+                    log.warning(f"ValueFrom filter: {expr} key returned None")
+
+                return res
         elif format == 'csv' or format == 'csv2dict':
             data = csv.reader(io.StringIO(contents))
             if format == 'csv2dict':
@@ -209,15 +249,21 @@ class ValuesFrom:
 
                     return self._get_resource_values(expr, data)
                 else:
-                    combined_data = set(itertools.chain.from_iterable(data))
-                    return combined_data
+                    expr = self.data['expr']
+                res = jmespath.search(expr, data)
+                if res is None:
+                    log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
+                return res
+            else:
+                combined_data = set(itertools.chain.from_iterable(data))
+                return combined_data
         elif format == 'txt':
             return set([s.strip() for s in io.StringIO(contents).readlines()])
 
-    def _get_resource_values(self, expr, data):
-        res = jmespath.search(expr, data)
+    def _get_resource_values(self, data):
+        res = jmespath.search(self.data['expr'], data)
         if res is None:
-            log.warning(f"ValueFrom filter: {expr} key returned None")
+            log.warning(f"ValueFrom filter: {self.data['expr']} key returned None")
         if isinstance(res, list):
             res = set(res)
         return res

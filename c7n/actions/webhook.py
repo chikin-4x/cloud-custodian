@@ -6,12 +6,12 @@ try:
 except ImportError:
     certifi = None
 
-import jmespath
-
-import urllib3
 from urllib import parse
 
+import jmespath
+import urllib3
 from c7n import utils
+
 from .core import EventAction
 
 
