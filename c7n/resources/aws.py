@@ -1,4 +1,3 @@
-# Copyright 2018 Capital One Services, LLC
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -153,6 +152,9 @@ class Arn(namedtuple('_Arn', (
         elif ':' in parts[-1]:
             parts.extend(reversed(parts.pop(-1).split(':', 1)))
             parts.append(':')
+        elif len(parts) == 6:
+            parts.append('')
+            parts.append('')
         return cls(*parts)
 
 
