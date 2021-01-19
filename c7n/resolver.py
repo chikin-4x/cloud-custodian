@@ -1,12 +1,21 @@
+<<<<<<< HEAD
 # Copyright 2016-2017 Capital One Services, LLC
 
+=======
+>>>>>>> 2d8d135256d34ed7edeee104eab9b1956f457076
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 import csv
 import io
 import json
 import logging
+<<<<<<< HEAD
 import os
+=======
+import itertools
+from urllib.request import Request, urlopen
+from urllib.parse import parse_qsl, urlparse
+>>>>>>> 2d8d135256d34ed7edeee104eab9b1956f457076
 import zlib
 from contextlib import closing
 from urllib.parse import parse_qsl, urlparse
@@ -228,9 +237,14 @@ class ValuesFrom:
             data = csv.reader(io.StringIO(contents))
             if format == 'csv2dict':
                 data = {x[0]: list(x[1:]) for x in zip(*data)}
+                if 'expr' in self.data:
+                    return self._get_resource_values(data)
+                else:
+                    combined_data = set(itertools.chain.from_iterable(data.values()))
+                    return combined_data
             else:
                 if isinstance(self.data.get('expr'), int):
-                    return [d[self.data['expr']] for d in data]
+                    return set([d[self.data['expr']] for d in data])
                 data = list(data)
             if 'expr' in self.data:
                 if self.event:
@@ -241,6 +255,16 @@ class ValuesFrom:
                 if res is None:
                     log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
                 return res
-            return data
+            else:
+                combined_data = set(itertools.chain.from_iterable(data))
+                return combined_data
         elif format == 'txt':
-            return [s.strip() for s in io.StringIO(contents).readlines()]
+            return set([s.strip() for s in io.StringIO(contents).readlines()])
+
+    def _get_resource_values(self, data):
+        res = jmespath.search(self.data['expr'], data)
+        if res is None:
+            log.warning(f"ValueFrom filter: {self.data['expr']} key returned None")
+        if isinstance(res, list):
+            res = set(res)
+        return res
