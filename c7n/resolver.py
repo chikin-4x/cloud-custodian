@@ -249,14 +249,8 @@ class ValuesFrom:
 
                     return self._get_resource_values(expr, data)
                 else:
-                    expr = self.data['expr']
-                res = jmespath.search(expr, data)
-                if res is None:
-                    log.warning('ValueFrom filter: %s key returned None' % self.data['expr'])
-                return res
-            else:
-                combined_data = set(itertools.chain.from_iterable(data))
-                return combined_data
+                    combined_data = set(itertools.chain.from_iterable(data))
+                    return combined_data
         elif format == 'txt':
             return set([s.strip() for s in io.StringIO(contents).readlines()])
 
