@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import csv
 import io
+import os
 import json
 import logging
 import itertools
