@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import csv
 import io
+import os
 import json
 import logging
 import itertools
@@ -33,6 +34,8 @@ class URIResolver:
 
         if uri.startswith('s3://'):
             contents = self.get_s3_uri(uri)
+        elif uri.startswith('dynamodb://'):
+            contents = self.get_dynamo_uri(uri)
         else:
             # TODO: in the case of file: content and untrusted
             # third parties, uri would need sanitization
@@ -67,9 +70,19 @@ class URIResolver:
         else:
             return body.decode('utf-8')
 
+    def get_dynamo_uri(self, uri):
+        # ParseResult(scheme='dynamodb', netloc='<table-name>', path='', params='', query='', fragment='')
+        parsed = urlparse(uri)
+
+        table = self.session_factory().resource('dynamodb').Table(parsed.netloc)
+        params = dict()
+
+        result = table.scan(**params)
+        return result.get('Items', None)
+
 
 class ValuesFrom:
-    """Retrieve values from a url.
+    """Retrieve values from a url or DynamoDB table.
 
     Supports json, csv and line delimited text files and expressions
     to retrieve a subset of values.
@@ -89,6 +102,10 @@ class ValuesFrom:
          expr: [].AppId
 
       value_from:
+         url: dynamodb://foobar
+         expr: [].AppId
+
+      value_from:
          url: http://foobar.com/mydata
          format: json
          expr: Region."us-east-1"[].ImageId
@@ -101,7 +118,7 @@ class ValuesFrom:
        # inferred from extension
        format: [json, csv, csv2dict, txt]
     """
-    supported_formats = ('json', 'txt', 'csv', 'csv2dict')
+    supported_formats = ('whitelist', 'json', 'txt', 'csv', 'csv2dict')
 
     # intent is that callers embed this schema
     schema = {
@@ -110,7 +127,7 @@ class ValuesFrom:
         'required': ['url'],
         'properties': {
             'url': {'type': 'string'},
-            'format': {'enum': ['csv', 'json', 'txt', 'csv2dict']},
+            'format': {'enum': ['whitelist', 'csv', 'json', 'txt', 'csv2dict']},
             'expr': {'oneOf': [
                 {'type': 'integer'},
                 {'type': 'string'}]}
@@ -134,6 +151,8 @@ class ValuesFrom:
 
         if not format or self.data.get('format'):
             format = self.data.get('format', '')
+        elif self.data['url'].startswith('dynamodb://'):
+            format = 'whitelist'
         else:
             format = format[1:]
 
@@ -141,7 +160,11 @@ class ValuesFrom:
             raise ValueError(
                 "Unsupported format %s for url %s",
                 format, self.data['url'])
-        contents = str(self.resolver.resolve(self.data['url']))
+
+        if format == "whitelist":
+            contents = self.resolver.resolve(self.data['url'])
+        else:
+            contents = str(self.resolver.resolve(self.data['url']))
         return contents, format
 
     def get_values(self):
@@ -162,8 +185,8 @@ class ValuesFrom:
     def _get_values(self):
         contents, format = self.get_contents()
 
-        if format == 'json':
-            data = json.loads(contents)
+        if format == 'whitelist':
+            data = contents
             if 'expr' in self.data:
                 expr = None
                 # this event is the event passed into the lambda. Slightly different than the CloudTrail event.
@@ -223,6 +246,14 @@ class ValuesFrom:
                     log.warning(f"ValueFrom filter: {expr} key returned None")
 
                 return res
+        elif format == 'json':
+            data = json.loads(contents)
+            if 'expr' in self.data:
+                expr = self.data['expr']
+                return self._get_resource_values(expr, data)
+            else:
+                combined_data = set(itertools.chain.from_iterable(data))
+                return combined_data
         elif format == 'csv' or format == 'csv2dict':
             data = csv.reader(io.StringIO(contents))
             if format == 'csv2dict':
@@ -255,9 +286,11 @@ class ValuesFrom:
             return set([s.strip() for s in io.StringIO(contents).readlines()])
 
     def _get_resource_values(self, data):
-        res = jmespath.search(self.data['expr'], data)
+        expr = self.data['expr']
+        res = jmespath.search(expr, data)
         if res is None:
-            log.warning(f"ValueFrom filter: {self.data['expr']} key returned None")
+            log.warning(f"ValueFrom filter: {expr} key returned None")
         if isinstance(res, list):
             res = set(res)
+        log.debug(f"ValueFrom filter: {expr} key returned {res}")
         return res
