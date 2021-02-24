@@ -13,7 +13,7 @@ from contextlib import closing
 
 import jmespath
 
-from c7n.utils import format_string_values
+from c7n.utils import format_string_values, local_session
 
 log = logging.getLogger('custodian.resolver')
 
@@ -74,7 +74,8 @@ class URIResolver:
         # ParseResult(scheme='dynamodb', netloc='<table-name>', path='', params='', query='', fragment='')
         parsed = urlparse(uri)
 
-        table = self.session_factory().resource('dynamodb').Table(parsed.netloc)
+        # Use local session to get whitelist table results
+        table = local_session(self.session_factory).resource('dynamodb').Table(parsed.netloc)
         params = dict()
 
         result = table.scan(**params)
