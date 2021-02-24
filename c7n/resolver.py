@@ -152,10 +152,10 @@ class ValuesFrom:
     def get_contents(self):
         _, format = os.path.splitext(self.data['url'])
 
-        if not format or self.data.get('format'):
-            format = self.data.get('format', '')
-        elif self.data['url'].startswith('dynamodb://'):
+        if self.data['url'].startswith('dynamodb://'):
             format = 'whitelist'
+        elif not format or self.data.get('format'):
+            format = self.data.get('format', '')
         else:
             format = format[1:]
 
