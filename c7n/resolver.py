@@ -28,10 +28,10 @@ class URIResolver:
         self.local_session = local_session
 
     def resolve(self, uri):
-        # if self.cache:
-        #     contents = self.cache.get(("uri-resolver", uri))
-        #     if contents is not None:
-        #         return contents
+        if self.cache:
+            contents = self.cache.get(("uri-resolver", uri))
+            if contents is not None:
+                return contents
 
         if uri.startswith('s3://'):
             contents = self.get_s3_uri(uri)
@@ -171,7 +171,6 @@ class ValuesFrom:
         return contents, format
 
     def get_values(self):
-        return self._get_values()
         if self.cache:
             # use these values as a key to cache the result so if we have
             # the same filter happening across many resources, we can reuse
