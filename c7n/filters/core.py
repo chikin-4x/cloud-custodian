@@ -23,7 +23,7 @@ from c7n.exceptions import PolicyValidationError
 from c7n.manager import iter_filters
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
-from c7n.utils import parse_cidr, set_annotation, type_schema, parse_date
+from c7n.utils import local_session, parse_cidr, set_annotation, type_schema, parse_date
 
 
 
@@ -552,7 +552,7 @@ class ValueFilter(BaseValueFilter):
                 # Grab value here to send to ValuesFrom for when the whitelist returns "*"
                 # When that happens, return r instead
                 r = self.get_resource_value(self.k, i)
-                values = ValuesFrom(self.data['value_from'], self.manager, self.event, value=r)
+                values = ValuesFrom(self.data['value_from'], self.manager, self.event, value=r, local_session=self.manager.ctx.policy.session_factory.base_session)
                 self.v = values.get_values()
             else:
                 self.v = self.data.get('value')

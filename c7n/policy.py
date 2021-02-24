@@ -390,6 +390,9 @@ class LambdaMode(ServerlessExecutionMode):
         member_id = self.get_member_account_id(event)
         region = self.get_member_region(event)
         if member_role and member_id and region:
+            # Save the base session so we can get the dynamo values
+            self.policy.session_factory.base_session = self.policy.session_factory()
+
             # In the master account we might be multiplexing a hot lambda across
             # multiple member accounts for each event/invocation.
             member_role = member_role.format(account_id=member_id)

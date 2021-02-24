@@ -13,7 +13,7 @@ from contextlib import closing
 
 import jmespath
 
-from c7n.utils import format_string_values, local_session
+from c7n.utils import format_string_values
 
 log = logging.getLogger('custodian.resolver')
 
@@ -22,15 +22,16 @@ ZIP_OR_GZIP_HEADER_DETECT = zlib.MAX_WBITS | 32
 
 class URIResolver:
 
-    def __init__(self, session_factory, cache):
+    def __init__(self, session_factory, cache, local_session):
         self.session_factory = session_factory
         self.cache = cache
+        self.local_session = local_session
 
     def resolve(self, uri):
-        if self.cache:
-            contents = self.cache.get(("uri-resolver", uri))
-            if contents is not None:
-                return contents
+        # if self.cache:
+        #     contents = self.cache.get(("uri-resolver", uri))
+        #     if contents is not None:
+        #         return contents
 
         if uri.startswith('s3://'):
             contents = self.get_s3_uri(uri)
@@ -75,7 +76,7 @@ class URIResolver:
         parsed = urlparse(uri)
 
         # Use local session to get whitelist table results
-        table = local_session(self.session_factory).resource('dynamodb').Table(parsed.netloc)
+        table = self.local_session.resource('dynamodb').Table(parsed.netloc)
         params = dict()
 
         result = table.scan(**params)
@@ -135,7 +136,7 @@ class ValuesFrom:
         }
     }
 
-    def __init__(self, data, manager, event=None, value=None):
+    def __init__(self, data, manager, event=None, value=None, local_session=None):
         config_args = {
             'account_id': manager.config.account_id,
             'region': manager.config.region
@@ -145,7 +146,8 @@ class ValuesFrom:
         self.event = event
         self.value = value
         self.cache = manager._cache
-        self.resolver = URIResolver(manager.session_factory, manager._cache)
+        self.local_session = local_session
+        self.resolver = URIResolver(manager.session_factory, manager._cache, self.local_session)
 
     def get_contents(self):
         _, format = os.path.splitext(self.data['url'])
@@ -169,6 +171,7 @@ class ValuesFrom:
         return contents, format
 
     def get_values(self):
+        return self._get_values()
         if self.cache:
             # use these values as a key to cache the result so if we have
             # the same filter happening across many resources, we can reuse
