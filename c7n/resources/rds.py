@@ -913,7 +913,7 @@ class RDSSetPublicAvailability(BaseAction):
         self.log.debug(f"Modifying instance {r['DBInstanceIdentifier']}")
         client.modify_db_instance(
             DBInstanceIdentifier=r['DBInstanceIdentifier'],
-            PubliclyAccessible=False)
+            PubliclyAccessible=self.data.get('state', False)))
             
 
     def process(self, rds):
