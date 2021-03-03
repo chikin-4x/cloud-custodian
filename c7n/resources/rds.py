@@ -896,10 +896,25 @@ class RDSSetPublicAvailability(BaseAction):
     permissions = ('rds:ModifyDBInstance',)
 
     def set_accessibility(self, r):
+        import time
         client = local_session(self.manager.session_factory).client('rds')
+        status = client.describe_db_instances(
+            DBInstanceIdentifier=r['DBInstanceIdentifier'],
+        )['DBInstances'][0]['DBInstanceStatus']
+
+        # Wait until instance is available
+        while "available" not in status:
+            self.log.debug(f"Instance {r['DBInstanceIdentifier']} not available")
+            time.sleep(5)
+            status = client.describe_db_instances(
+                DBInstanceIdentifier=r['DBInstanceIdentifier'],
+            )['DBInstances'][0]['DBInstanceStatus']
+
+        self.log.debug(f"Modifying instance {r['DBInstanceIdentifier']}")
         client.modify_db_instance(
             DBInstanceIdentifier=r['DBInstanceIdentifier'],
-            PubliclyAccessible=self.data.get('state', False))
+            PubliclyAccessible=False)
+            
 
     def process(self, rds):
         with self.executor_factory(max_workers=2) as w:
