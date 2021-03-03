@@ -566,10 +566,26 @@ class RedshiftSetPublicAccess(BaseAction):
     permissions = ('redshift:ModifyCluster',)
 
     def set_access(self, c):
+        import time
         client = local_session(self.manager.session_factory).client('redshift')
+        status = client.describe_clusters(
+            ClusterIdentifier=c['ClusterIdentifier'],
+        )['Clusters'][0]['ClusterStatus']
+
+        # Wait until cluster is available
+        while "available" not in status:
+            self.log.debug(f"Cluster {c['ClusterIdentifier']} not available")
+            time.sleep(5)
+            status = client.describe_clusters(
+                ClusterIdentifier=c['ClusterIdentifier'],
+            )['Clusters'][0]['ClusterStatus']
+
+        self.log.debug(f"Modifying cluster {c['ClusterIdentifier']}")
         client.modify_cluster(
             ClusterIdentifier=c['ClusterIdentifier'],
             PubliclyAccessible=self.data.get('state', False))
+            
+        
 
     def process(self, clusters):
         with self.executor_factory(max_workers=2) as w:
